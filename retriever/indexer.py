@@ -3,31 +3,39 @@ import numpy as np
 import faiss
 import os
 from sentence_transformers import SentenceTransformer
+from typing import List
 
-EMBED_MODEL = SentenceTransformer("all-MiniLM-L6-v2")
-
-def build_index(chunks_file="data/chunks.json", index_file="data/faiss_index.bin"):
-    with open(chunks_file, "r") as f:
-        chunks = json.load(f)
-    
-    if not chunks:
-        return 0
+class VectorIndexer:
+    def __init__(self):
+        self.embed_model = SentenceTransformer("all-MiniLM-L6-v2")
         
-    embeds = EMBED_MODEL.encode(chunks, show_progress_bar=True, batch_size=128)
-    index = faiss.IndexFlatL2(embeds.shape[1])
-    index.add(np.array(embeds).astype('float32'))
-    faiss.write_index(index, index_file)
-    return len(chunks)
-
-def retrieve(query: str, k=5, index_file="data/faiss_index.bin", chunks_file="data/chunks.json"):
-    if not os.path.exists(index_file):
-        return []
+    def build_index(self, chunks: List[str], index_file: str = "data/faiss_index.bin"):
+        """Build and save FAISS index"""
+        if not chunks:
+            raise ValueError("No chunks provided for indexing")
+            
+        embeddings = self.embed_model.encode(chunks, show_progress_bar=True)
+        index = faiss.IndexFlatIP(embeddings.shape[1])  # Using Inner Product for similarity
+        faiss.normalize_L2(embeddings)  # Normalize for cosine similarity
+        index.add(embeddings)
         
-    index = faiss.read_index(index_file)
-    with open(chunks_file, "r") as f:
-        chunks = json.load(f)
-    
-    query_embed = EMBED_MODEL.encode([query])
-    distances, indices = index.search(np.array(query_embed).astype('float32'), k)
-    
-    return [chunks[i] for i in indices[0] if i < len(chunks)]
+        os.makedirs(os.path.dirname(index_file), exist_ok=True)
+        faiss.write_index(index, index_file)
+        return len(chunks)
+        
+    def retrieve(
+        self, 
+        query: str, 
+        k: int = 3, 
+        index_file: str = "data/faiss_index.bin"
+    ) -> List[str]:
+        """Retrieve top-k most relevant chunks"""
+        if not os.path.exists(index_file):
+            raise FileNotFoundError(f"Index file not found: {index_file}")
+            
+        index = faiss.read_index(index_file)
+        query_embed = self.embed_model.encode([query])
+        faiss.normalize_L2(query_embed)
+        
+        distances, indices = index.search(query_embed, k)
+        return indices[0].tolist()
