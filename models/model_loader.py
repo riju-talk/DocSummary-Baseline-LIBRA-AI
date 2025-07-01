@@ -1,11 +1,13 @@
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 import torch
 from typing import Optional
-import warnings
+from dotenv import load_dotenv
+import os
 
+load_dotenv()
 class QAModel:
     def __init__(self):
-        self.model_name = "mistralai/Mistral-7B-Instruct-v0.1"
+        self.model_name = os.getenv('MODEL_NAME')
         self.tokenizer = None
         self.model = None
         self._load_model()
@@ -15,7 +17,7 @@ class QAModel:
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
             
-            self.model = AutoModelForCausalLM.from_pretrained(
+            self.model = AutoModelForSeq2SeqLM.from_pretrained(
                 self.model_name,
                 torch_dtype=torch.float32,
                 device_map="auto",
@@ -23,7 +25,6 @@ class QAModel:
             )
             
             # Enable CPU optimizations
-            self.model = self.model.to(torch.float32)
             self.model.eval()
             
         except Exception as e:
